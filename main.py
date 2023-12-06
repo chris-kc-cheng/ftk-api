@@ -1,5 +1,5 @@
 # Standard
-import os
+import os, secrets
 from datetime import date, datetime, timedelta
 from enum import Enum
 from typing_extensions import Annotated
@@ -7,7 +7,8 @@ from typing_extensions import Annotated
 # FastAPI/Pydantic
 from fastapi import FastAPI, Body, Depends, Query, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import ConfigDict, BaseModel, Field, EmailStr
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ConfigDict, BaseModel, Field, EmailStr, conlist
 from pydantic.functional_validators import BeforeValidator
 
 # Security
@@ -24,6 +25,18 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 app = FastAPI(
     title="Financial Toolkit API",
     summary="Backend of the Financial Toolkit Demo",
+)
+
+origins = [
+    "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 client = motor.motor_asyncio.AsyncIOMotorClient(os.environ["MONGODB_HOST"])
@@ -53,11 +66,11 @@ class TokenData(BaseModel):
 class User(BaseModel):
     id: PyObjectId = Field(alias="_id", default=None)
     username: str
-    password: str
+    password: str | None = None
     first_name: str = Field(alias="firstName")
     last_name: str = Field(alias="lastName")
-    is_active: bool = Field(alias="isActive")
-    roles: list[str]
+    is_active: bool = Field(alias="isActive", default=True)
+    roles: list[str] = ['user']
 
     model_config = ConfigDict(
         populate_by_name=True)
@@ -103,6 +116,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
 ):
+    print('token')
     user = await authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -137,8 +151,105 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     return user
 
 
-@app.get("/users/me/", response_model=User)
+@app.get("/user", response_model=User)
 async def read_users_me(
     current_user: Annotated[User, Depends(get_current_user)]
 ):
-    return current_user
+    return current_user.model_dump(by_alias=True, exclude=['password'])
+
+
+class ChangePassword(BaseModel):
+    old_password: str
+    new_password: str
+    confirm_password: str
+
+class ResetPassword(BaseModel):
+    username: str
+    password: str = secrets.token_urlsafe
+
+class Message(BaseModel):
+    status: str
+    message: str
+
+@app.put("/user/password", response_model=Message)
+async def user_change_password(
+    request: ChangePassword,
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    if not verify_password(request.old_password, current_user.password):
+        return {'status': 'error', 'message': 'Cannot verify'}
+    if request.new_password != request.confirm_password:
+        return {'status': 'error', 'message': 'Passwords do not match'}
+    await db.user.update_one({'_id': ObjectId(current_user.id)}, {'$set': {'password': get_password_hash(request.new_password)}})
+    return {'status': 'success', 'message': 'Password changed successfully'}
+
+@app.post("/user",
+          response_model=User)
+async def create_user(user: Annotated[User, Body()]):
+    result = await db.user.insert_one(
+        user.model_dump(by_alias=True, exclude=['id', 'password'])
+    )
+    created_user = await db.user.find_one(
+        {"_id": result.inserted_id}
+    )
+    return created_user
+
+@app.put("/user/reset",
+          response_model=Message)
+async def reset_user_password(req: Annotated[ResetPassword, Body()]):
+    result = await db.user.update_one(
+        {'username': req.username},
+        {'$set': {'password': get_password_hash(req.password)}}
+    )
+    if result.modified_count == 1:
+        return {'status': 'success', 'message': 'Password is reset'}
+    else:
+        return {'status': 'error', 'message': 'User not found'}
+    
+class Fund(BaseModel):
+    id: PyObjectId = Field(alias="_id", default=None)
+    name: str = Field(min_length=1)
+    firm: str = Field(min_length=1)
+    assetClasses: conlist(str, min_length=1)
+    launchDate: date | None = None
+
+@app.post("/fund",
+          response_model=Fund)
+async def create_new_fund(req: Annotated[Fund, Body()]):    
+    print("AAA", req, req.model_dump(by_alias=True, exclude=['id']))
+    result = await db.fund.insert_one(
+        req.model_dump(by_alias=True, exclude=['id'])
+    )
+    print("BBB", result)
+    created_fund = await db.fund.find_one(
+        {"_id": result.inserted_id}
+    )
+    print("CCC")
+    return created_fund
+
+@app.get("/fund", response_model=list[Fund])
+async def get_funds():
+    return await db.fund.find({}).collation({'locale':'en'}).sort('name').to_list(1000)
+
+
+@app.get("/fund/{id}", response_model=Fund)
+async def get_fund(id: str):
+    return await db.fund.find_one({'_id': id})
+
+
+"""
+@bp_fund.route('/<id>')
+@flask_praetorian.auth_required
+def get_fund(id):
+    print('Fund Details')
+    fund = Fund.objects.get(pk=id)
+    return jsonify(fund), 200
+
+
+@bp_fund.route('/<id>/note')
+@flask_praetorian.auth_required
+def get_fund_notes(id):
+    '''All notes including drafts'''
+    notes = Note.objects(fundId=id).order_by('-modifiedDate')
+    return jsonify(notes), 200
+"""
