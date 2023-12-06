@@ -3,3 +3,5 @@ uvicorn[standard]
 python-jose[cryptography]
 passlib[bcrypt]
 motor
+numpy
+pandas

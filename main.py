@@ -1,5 +1,6 @@
 # Standard
-import os, secrets
+import os
+import secrets
 from datetime import date, datetime, timedelta
 from enum import Enum
 from typing_extensions import Annotated
@@ -18,6 +19,10 @@ from passlib.context import CryptContext
 # Database
 from bson import ObjectId
 import motor.motor_asyncio
+
+# Risk
+import numpy as np
+import pandas as pd
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -46,7 +51,7 @@ PyObjectId = Annotated[str, BeforeValidator(str)]
 
 SECRET_KEY = os.environ["SECRET_KEY"]
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_DAYS = 30
 
 
 @app.get("/")
@@ -124,7 +129,7 @@ async def login_for_access_token(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
@@ -152,7 +157,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
 
 
 @app.get("/user", response_model=User)
-async def read_users_me(
+async def user_profile(
     current_user: Annotated[User, Depends(get_current_user)]
 ):
     return current_user.model_dump(by_alias=True, exclude=['password'])
@@ -163,13 +168,16 @@ class ChangePassword(BaseModel):
     new_password: str
     confirm_password: str
 
+
 class ResetPassword(BaseModel):
     username: str
     password: str = secrets.token_urlsafe
 
+
 class Message(BaseModel):
     status: str
     message: str
+
 
 @app.put("/user/password", response_model=Message)
 async def user_change_password(
@@ -183,6 +191,7 @@ async def user_change_password(
     await db.user.update_one({'_id': ObjectId(current_user.id)}, {'$set': {'password': get_password_hash(request.new_password)}})
     return {'status': 'success', 'message': 'Password changed successfully'}
 
+
 @app.post("/user",
           response_model=User)
 async def create_user(user: Annotated[User, Body()]):
@@ -194,8 +203,9 @@ async def create_user(user: Annotated[User, Body()]):
     )
     return created_user
 
+
 @app.put("/user/reset",
-          response_model=Message)
+         response_model=Message)
 async def reset_user_password(req: Annotated[ResetPassword, Body()]):
     result = await db.user.update_one(
         {'username': req.username},
@@ -205,7 +215,8 @@ async def reset_user_password(req: Annotated[ResetPassword, Body()]):
         return {'status': 'success', 'message': 'Password is reset'}
     else:
         return {'status': 'error', 'message': 'User not found'}
-    
+
+
 class Fund(BaseModel):
     id: PyObjectId = Field(alias="_id", default=None)
     name: str = Field(min_length=1)
@@ -213,43 +224,128 @@ class Fund(BaseModel):
     assetClasses: conlist(str, min_length=1)
     launchDate: date | None = None
 
+
+class Note(BaseModel):
+    id: PyObjectId = Field(alias="_id", default=None)
+    authorId: PyObjectId
+    authorName: str
+    fundId: PyObjectId
+    fundName: str
+    modifiedDate: datetime
+    content: str
+    published: bool
+
+
+class UpdateNote(BaseModel):
+    content: str
+    published: bool
+
+
 @app.post("/fund",
           response_model=Fund)
-async def create_new_fund(req: Annotated[Fund, Body()]):    
-    print("AAA", req, req.model_dump(by_alias=True, exclude=['id']))
+async def create_new_fund(req: Annotated[Fund, Body()]):
     result = await db.fund.insert_one(
         req.model_dump(by_alias=True, exclude=['id'])
     )
-    print("BBB", result)
     created_fund = await db.fund.find_one(
         {"_id": result.inserted_id}
     )
-    print("CCC")
     return created_fund
 
+
 @app.get("/fund", response_model=list[Fund])
-async def get_funds():
-    return await db.fund.find({}).collation({'locale':'en'}).sort('name').to_list(1000)
+async def get_all_funds():
+    return await db.fund.find({}).collation({'locale': 'en'}).sort({'name': 1}).to_list(1000)
 
 
 @app.get("/fund/{id}", response_model=Fund)
-async def get_fund(id: str):
-    return await db.fund.find_one({'_id': id})
+async def get_fund_details(id: str):
+    return await db.fund.find_one({'_id': ObjectId(id)})
 
 
-"""
-@bp_fund.route('/<id>')
-@flask_praetorian.auth_required
-def get_fund(id):
-    print('Fund Details')
-    fund = Fund.objects.get(pk=id)
-    return jsonify(fund), 200
+@app.get("/fund/{id}/note", response_model=list[Note])
+async def get_fund_notes(id: str):
+    """Including draft"""
+    return await db.note.find({'fundId': ObjectId(id)}).sort({'modifiedDate': -1}).to_list(1000)
 
 
-@bp_fund.route('/<id>/note')
-@flask_praetorian.auth_required
-def get_fund_notes(id):
-    '''All notes including drafts'''
-    notes = Note.objects(fundId=id).order_by('-modifiedDate')
-    return jsonify(notes), 200
-"""
+@app.get("/note", response_model=list[Note])
+async def get_published_notes(skip: int = 0, limit: int = 1):
+    return await db.note.find({'published': True}).sort({'modifiedDate': -1}).skip(skip).limit(limit).to_list(limit)
+
+
+@app.get("/note/{id}", response_model=Note)
+async def get_note(id):
+    return await db.note.find_one({'_id': ObjectId(id)})
+
+
+@app.post("/note/{fund_id}", response_model=Note)
+async def post_new_note(
+    fund_id: str,
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    # fund is a dict, not Fund object
+    fund = await get_fund_details(fund_id)
+    result = await db.note.insert_one({
+        'authorId': current_user.id,
+        'authorName': current_user.first_name + ' ' + current_user.last_name,
+        'fundId': fund['_id'],
+        'fundName': fund['name'],
+        'modifiedDate': datetime.now(),
+        'content': '',
+        'published': False
+    })
+    created_note = await db.note.find_one(
+        {"_id": result.inserted_id}
+    )
+    return created_note
+
+
+@app.put("/note/{id}", response_model=Note)
+async def save_note(id: str, update: UpdateNote):
+    # TODO: Check user is the original author
+    await db.note.update_one({'_id': ObjectId(id)}, {'$set': {
+        'content': update.content,
+        'published': update.published,
+        'modifiedDate': datetime.now()
+    }})
+    updated_note = await db.note.find_one(
+        {"_id": ObjectId(id)}
+    )
+    return updated_note
+
+
+@app.get("/risk/test")
+def test_data_for_charts():
+    """
+    Line/Bar/Scatter chart:
+        dict of 3 lists: index, columns and data
+    Pie chart:
+        dict of 2 lists: columns and data
+    Scatter chart:
+    """
+    line = pd.DataFrame(np.random.randint(0, 100, size=(10, 2)),
+                        columns=['Fund', 'Benchmark'],
+                        index=pd.date_range(start='2000-01-01', freq='M', periods=10))
+    line.index = line.index.to_series().astype(str)
+
+    scatter = pd.DataFrame(np.random.randint(0, 100, size=(3, 2)), index=[
+                           'Fund', 'Benchmark', 'Peer Group'], columns=['Return', 'Volatility'])
+
+    bar = pd.DataFrame(np.random.randint(0, 100, size=(5, 3)),
+                       columns=['US/Canada', 'Europe', 'Asia'],
+                       index=pd.period_range(start='2023-01', freq='M', periods=5))
+    bar.index = bar.index.astype(str)
+
+    pie = pd.Series(np.random.randint(0, 100, size=(3)), index=[
+                    'Equity', 'Fixed Income', 'Cash']).to_dict()
+
+    return {
+        'lineChartData': line.to_dict(orient='split'),
+        'scatterChartData': scatter.to_dict(orient='split'),
+        'barChartData': bar.to_dict(orient='split'),
+        'pieChartData': {
+            'columns': list(pie),
+            'data': list(pie.values())
+        }
+    }
