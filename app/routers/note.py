@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing_extensions import Annotated
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -50,7 +50,7 @@ async def post_new_note(
         'authorName': current_user.first_name + ' ' + current_user.last_name,
         'fundId': fund['_id'],
         'fundName': fund['name'],
-        'modifiedDate': datetime.now(),
+        'modifiedDate': datetime.now(tz=timezone.utc),
         'content': '',
         'published': False
     })
@@ -66,7 +66,7 @@ async def save_note(id: str, update: UpdateNote):
     await db.note.update_one({'_id': ObjectId(id)}, {'$set': {
         'content': update.content,
         'published': update.published,
-        'modifiedDate': datetime.now()
+        'modifiedDate': datetime.now(tz=timezone.utc)
     }})
     updated_note = await db.note.find_one(
         {"_id": ObjectId(id)}

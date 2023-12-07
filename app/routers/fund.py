@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel, Field, conlist
-from datetime import date
+from datetime import datetime
 from typing_extensions import Annotated
 from bson import ObjectId
 from ..dependencies import db, PyObjectId
@@ -17,7 +17,7 @@ class Fund(BaseModel):
     name: str = Field(min_length=1)
     firm: str = Field(min_length=1)
     assetClasses: conlist(str, min_length=1)
-    launchDate: date | None = None
+    launchDate: datetime | None = None
 
 @router.post("/",
           response_model=Fund)
