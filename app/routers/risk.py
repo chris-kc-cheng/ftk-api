@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends
+import numpy as np
+import pandas as pd
+from .user import get_current_user
 
 router = APIRouter(prefix='/risk',
                    tags=['risk'],
-                   dependencies=[],
+                   dependencies=[Depends(get_current_user)],
                    responses={404: {'description': 'Not found'}})
 
 
