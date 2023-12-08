@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from io import BytesIO
+from fastapi import APIRouter, Depends, UploadFile
+from fastapi.responses import StreamingResponse
 import numpy as np
 import pandas as pd
 from .user import get_current_user
@@ -43,3 +45,24 @@ def test_data_for_charts():
             'data': list(pie.values())
         }
     }
+
+@router.get("/data")
+async def download_data():
+    """
+    Writing DataFrame to memory:
+    https://pandas.pydata.org/pandas-docs/version/0.25.0/user_guide/io.html#writing-excel-files-to-memory    
+    """
+    bio = BytesIO()
+    writer = pd.ExcelWriter(bio)
+    df = pd.DataFrame([{"a": 1}, {"a": 2}], index=pd.date_range('2022-12-31', periods=2, freq='M'))
+    df.to_excel(writer)
+    writer.close()
+    bio.seek(0)
+    return StreamingResponse(bio, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@router.post("/data")
+def upload_data(file: UploadFile):
+    print(file.filename, file.content_type)
+    df = pd.read_excel(file.file)
+    print(df)
