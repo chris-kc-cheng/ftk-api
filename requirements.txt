@@ -5,3 +5,4 @@ passlib[bcrypt]
 motor
 numpy
 pandas
+openpyxl
