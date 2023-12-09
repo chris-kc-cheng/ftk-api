@@ -11,6 +11,7 @@ from .routers import user
 from .routers import fund
 from .routers import note
 from .routers import risk
+from .routers import market
 
 app = FastAPI(
     title="Financial Toolkit API",
@@ -22,6 +23,7 @@ app.include_router(user.router)
 app.include_router(fund.router)
 app.include_router(note.router)
 app.include_router(risk.router)
+app.include_router(market.router)
 
 origins = [
     "http://127.0.0.1:3000",
