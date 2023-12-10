@@ -2,6 +2,7 @@ import secrets
 from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel
 from typing_extensions import Annotated
+from passlib.context import CryptContext
 from ..dependencies import db
 from app.routers.user import User, Message, get_password_hash, admin_required
 
@@ -10,6 +11,7 @@ router = APIRouter(prefix='/admin',
                    dependencies=[Depends(admin_required)],
                    responses={404: {'description': 'Not found'}})
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class ResetPassword(BaseModel):
     username: str
@@ -19,8 +21,10 @@ class ResetPassword(BaseModel):
 @router.post("/",
              response_model=User)
 async def create_user(user: Annotated[User, Body()]):
+    hashed = user.model_dump(by_alias=True, exclude=['id'])
+    hashed['password'] = pwd_context.hash(hashed['password'])
     result = await db.user.insert_one(
-        user.model_dump(by_alias=True, exclude=['id', 'password'])
+        hashed
     )
     created_user = await db.user.find_one(
         {"_id": result.inserted_id}
