@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, UploadFile
 from fastapi.responses import StreamingResponse
 import numpy as np
 import pandas as pd
+from ..dependencies import db
 from .user import get_current_user
 
 router = APIRouter(prefix='/risk',
@@ -54,7 +55,9 @@ async def download_data():
     """
     bio = BytesIO()
     writer = pd.ExcelWriter(bio)
-    df = pd.DataFrame([{"a": 1}, {"a": 2}], index=pd.date_range('2022-12-31', periods=2, freq='M'))
+    #df = pd.DataFrame([{"a": 1}, {"a": 2}], index=pd.date_range('2022-12-31', periods=2, freq='M'))
+    funds = await db.fund.find({}, {'name': 1}).collation({'locale': 'en' }).sort({'name': 1 }).to_list(1000)
+    df = pd.DataFrame(list(funds)).set_index('_id')
     df.to_excel(writer)
     writer.close()
     bio.seek(0)

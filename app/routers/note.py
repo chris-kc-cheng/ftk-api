@@ -42,9 +42,7 @@ async def post_new_note(
     fund_id: str,
     current_user: Annotated[User, Depends(get_current_user)]
 ):
-    print('*******')
     fund = await db.fund.find_one({'_id': ObjectId(fund_id)})
-    print('*******', fund)
     result = await db.note.insert_one({
         'authorId': current_user.id,
         'authorName': current_user.first_name + ' ' + current_user.last_name,

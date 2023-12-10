@@ -13,7 +13,7 @@ router = APIRouter(prefix='/admin',
 
 class ResetPassword(BaseModel):
     username: str
-    password: str = secrets.token_urlsafe
+    password: str = secrets.token_urlsafe()
 
 
 @router.post("/",

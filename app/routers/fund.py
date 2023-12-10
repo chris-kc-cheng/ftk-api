@@ -12,6 +12,31 @@ router = APIRouter(prefix='/fund',
                    dependencies=[Depends(get_current_user)],
                    responses={404: {'description': 'Not found'}})
 
+COUNT_FUND_BY_ASSET_CLASS = [
+    {
+        '$group': {
+            '_id': '$assetClasses', 
+            'count': {
+                '$sum': 1
+            }
+        }
+    }, {
+        '$unwind': {
+            'path': '$_id'
+        }
+    }, {
+        '$group': {
+            '_id': '$_id', 
+            'count': {
+                '$sum': '$count'
+            }
+        }
+    }, {
+        '$sort': {
+            'count': -1
+        }
+    }
+]
 
 class Fund(BaseModel):
     id: PyObjectId = Field(alias="_id", default=None)
@@ -20,6 +45,9 @@ class Fund(BaseModel):
     assetClasses: conlist(str, min_length=1)
     launchDate: datetime | None = None
 
+class AssetClassCount(BaseModel):
+    assetClasses: str = Field(alias="_id", default=None)
+    count: int
 
 @router.post("/",
              response_model=Fund)
@@ -38,14 +66,13 @@ async def get_all_funds():
     return await db.fund.find({}).collation({'locale': 'en'}).sort({'name': 1}).to_list(1000)
 
 
-@router.get("/assetClass", response_model=list[str])
+@router.get("/assetClass", response_model=list[AssetClassCount])
 async def get_asset_classes():
-    return await db.fund.distinct('assetClasses')
+    return await db.fund.aggregate(COUNT_FUND_BY_ASSET_CLASS).to_list(1000)
 
 
 @router.get("/assetClass/{assetClass}", response_model=list[Fund])
 async def get_fund_by_asset_class(assetClass: str):
-    print('aaaa', assetClass)
     return await db.fund.find({'assetClasses': assetClass}).sort({'name': 1}).to_list(1000)
 
 
