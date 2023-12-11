@@ -1,0 +1,14 @@
+_id,children
+Asset Class,"Equity,Debt,Alternatives"
+Equity,"Public Equity,Private Equity"
+Debt,"Public Debt,Private Debt"
+Alternatives,"CTA,Hedge Fund,ILS,Real Estate,Digital Assets"
+Public Equity,
+Private Equity,
+Public Debt,
+Private Debt,
+CTA,
+Hedge Fund,
+ILS,
+Real Estate,
+Digital Assets,

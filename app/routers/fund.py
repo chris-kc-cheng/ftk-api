@@ -6,11 +6,14 @@ from bson import ObjectId
 from ..dependencies import db, PyObjectId
 from .user import get_current_user
 from .note import Note
+from . import tag
 
 router = APIRouter(prefix='/fund',
                    tags=['fund'],
                    dependencies=[Depends(get_current_user)],
                    responses={404: {'description': 'Not found'}})
+
+router.include_router(tag.router)
 
 COUNT_FUND_BY_ASSET_CLASS = [
     {
