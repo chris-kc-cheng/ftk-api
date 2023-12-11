@@ -50,6 +50,7 @@ class User(BaseModel):
     last_name: str = Field(alias="lastName")
     is_active: bool = Field(alias="isActive", default=True)
     roles: list[str] = ['user']
+    followed: list[PyObjectId] = []
 
     model_config = ConfigDict(
         populate_by_name=True)

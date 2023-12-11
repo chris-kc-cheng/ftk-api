@@ -6,7 +6,8 @@ from bson import ObjectId
 from ..dependencies import db, PyObjectId
 from .user import get_current_user
 from .note import Note
-from . import tag
+from . import tag, follow
+from .model import Fund
 
 router = APIRouter(prefix='/fund',
                    tags=['fund'],
@@ -14,6 +15,7 @@ router = APIRouter(prefix='/fund',
                    responses={404: {'description': 'Not found'}})
 
 router.include_router(tag.router)
+router.include_router(follow.router)
 
 COUNT_FUND_BY_ASSET_CLASS = [
     {
@@ -41,12 +43,7 @@ COUNT_FUND_BY_ASSET_CLASS = [
     }
 ]
 
-class Fund(BaseModel):
-    id: PyObjectId = Field(alias="_id", default=None)
-    name: str = Field(min_length=1)
-    firm: str = Field(min_length=1)
-    assetClasses: conlist(str, min_length=1)
-    launchDate: datetime | None = None
+
 
 class AssetClassCount(BaseModel):
     assetClasses: str = Field(alias="_id", default=None)
