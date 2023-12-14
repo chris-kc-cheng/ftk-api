@@ -8,3 +8,10 @@ class Fund(BaseModel):
     firm: str = Field(min_length=1)
     assetClasses: conlist(str, min_length=1)
     launchDate: datetime | None = None
+
+class Data(BaseModel):
+    id: PyObjectId = Field(alias="_id", default=None)
+    fundId: PyObjectId
+    date: datetime
+    values: dict
+    
